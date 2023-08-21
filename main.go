@@ -116,8 +116,14 @@ func getImage(c *gin.Context) {
 	}
 
 	if strings.Contains(transformation, "pad")  {
-		hex := Hex(transformation[4:])
+		hexString := transformation[4:]
+		if len(hexString) == 3 {
+			hexString = hexString[0:1] + hexString[0:1] + hexString[1:2] + hexString[1:2] + hexString[2:3] + hexString[2:3]
+		}
+
+		hex := Hex(hexString)
 		transformation = "pad"
+
 		background, err := Hex2RGB(hex)
 		if err != nil {
 			log.Fatal(err)
