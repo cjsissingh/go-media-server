@@ -58,9 +58,16 @@ func Hex2RGB(hex Hex) (RGB, error) {
 }
 
 func getImage(c *gin.Context) {
-	id, md5AndTransforms := c.Params.ByName("id"), c.Params.ByName("md5AndTransforms")
-
-	fmt.Println(id, md5AndTransforms)
+	md5AndTransforms := c.Params.ByName("md5AndTransforms")
+	if md5AndTransforms == "" {
+		c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{
+			"status": http.StatusBadRequest,
+			"code": "DecodeRequest::CannotDecodeRequest",
+			"message": "The URL does not have enough parts. The format must be '/{resource}/{resourceId}/{md5}.{auto|scale|crop|pad-{colour}}.{width}x{height}.jpg'",
+			"level": "error",
+		})
+		return
+	}
 
 	cfg, err := config.LoadDefaultConfig(context.TODO())
 	if err != nil {
@@ -73,18 +80,17 @@ func getImage(c *gin.Context) {
 	transforms := md5AndTransforms[32:]
 
 	transformParts := strings.Split(transforms, ".")
+	if len(transformParts) != 4 {
+		c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{
+			"status": http.StatusBadRequest,
+			"code": "DecodeRequest::CannotDecodeRequest",
+			"message": "The URL does not have enough parts. The format must be '/{resource}/{resourceId}/{md5}.{auto|scale|crop|pad-{colour}}.{width}x{height}.jpg'",
+			"level": "error",
+		})
+		return
+	}
 
 	transformation := transformParts[1]
-	var background RGB
-	if strings.Contains(transformation, "pad") {
-		hex := Hex(transformation[4:])
-		transformation = "pad"
-		background, err = Hex2RGB(hex)
-		if err != nil {
-			log.Fatal(err)
-		}
-		fmt.Println(background)
-	}
 
 	dimensions := transformParts[2]
 	fileType := transformParts[3]
@@ -94,13 +100,17 @@ func getImage(c *gin.Context) {
 	width, err := strconv.Atoi(dimensionsParts[0])
 	height, err := strconv.Atoi(dimensionsParts[1])
 
-	// Get the first page of results for ListObjectsV2 for a bucket
 	output, err := client.GetObject(context.TODO(), &s3.GetObjectInput{
 		Bucket: aws.String(os.Getenv("SOURCE_BUCKETS")),
 		Key:    aws.String("listings/" + md5 + "." + fileType),
 	})
 	if err != nil {
-		log.Fatal(err)
+		c.AbortWithStatusJSON(http.StatusNotFound, gin.H{
+			"status": http.StatusNotFound,
+			"message": "The specified key does not exist.",
+			"level": "error",
+		})
+		return
 	}
 
 	buffer, err := io.ReadAll(output.Body)
@@ -115,17 +125,27 @@ func getImage(c *gin.Context) {
 		Height: height,
 		Type:   outputType,
 	}
+
 	if transformation == "crop" {
 		options.Crop = true
 		options.Gravity = bimg.GravityCentre
 	}
-	if transformation == "fit" {
-		options.Force = true
-	}
+	// Not a supported option
+	// if transformation == "fit" {
+	// 	options.Force = true
+	// }
+
 	if transformation == "scale" {
 		options.Enlarge = true
 	}
-	if transformation == "pad" {
+
+	if strings.Contains(transformation, "pad")  {
+		hex := Hex(transformation[4:])
+		transformation = "pad"
+		background, err := Hex2RGB(hex)
+		if err != nil {
+			log.Fatal(err)
+		}
 		options.Embed = true
 		options.Extend = bimg.ExtendBackground
 		options.Background = bimg.Color{R: background.Red, G: background.Green, B: background.Blue}
