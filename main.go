@@ -105,6 +105,7 @@ func getImage(c *gin.Context) {
 		options.Crop = true
 		options.Gravity = bimg.GravityCentre
 	}
+
 	// Not a supported option
 	// if transformation == "fit" {
 	// 	options.Force = true
